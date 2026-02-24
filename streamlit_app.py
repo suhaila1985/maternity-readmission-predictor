@@ -84,7 +84,12 @@ def load_and_train_model():
     
     # Calculate metrics
     y_pred = model.predict(X_test)
-    y_pred_proba = model.predict_proba(X_test)[:, 1]
+    y_pred_proba_full = model.predict_proba(X_test)
+    # Handle both single class and binary class cases
+    if y_pred_proba_full.shape[1] == 1:
+        y_pred_proba = y_pred_proba_full[:, 0]
+    else:
+        y_pred_proba = y_pred_proba_full[:, 1]
     accuracy = accuracy_score(y_test, y_pred)
     auc = roc_auc_score(y_test, y_pred_proba)
     
@@ -177,7 +182,11 @@ with st.sidebar:
 # ============================================
 # Prepare input
 patient_data = np.array([[age, labor_duration, los, location_encoded, complications_encoded]])
-risk_probability = model.predict_proba(patient_data)[0][1]
+risk_probability_full = model.predict_proba(patient_data)[0]
+if len(risk_probability_full) == 1:
+    risk_probability = risk_probability_full[0]
+else:
+    risk_probability = risk_probability_full[1]
 risk_class = model.predict(patient_data)[0]
 
 # Determine risk level
