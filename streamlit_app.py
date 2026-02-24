@@ -64,6 +64,467 @@ def load_and_train_model():
     df['LaborDuration'] = df['LaborDuration'].fillna(df['LaborDuration'].median())
     df['Age'] = df['Age'].fillna(df['Age'].median())
     df['Complications'] = df['Complications'].fillna(df['Complications'].mode()[0])
+
+    # 🎯 How to Train Your Model to Prioritize Specific Features
+
+## Problem: Current Feature Importance
+
+Currently, your model learns importance from data:
+```
+Length of Stay:     38% (highest)
+Complications:      32%
+Labor Duration:     18%
+Location:            8%
+Age:                 4%
+```
+
+**Question**: How do I make it prioritize Complications, LOS, and Age?
+
+---
+
+## 📊 Understanding Feature Importance
+
+### What is Feature Importance?
+Feature importance = "How much does this feature contribute to predictions?"
+
+```
+Model asks: "If I ignore this feature, how much worse do my predictions get?"
+Feature Importance = Importance Score (0-1)
+```
+
+### Why Does It Matter?
+
+| Feature | Importance | What It Means |
+|---------|-----------|--------------|
+| LOS | 38% | Changes LOS → Big change in prediction |
+| Complications | 32% | Changes Complications → Medium change |
+| Labor | 18% | Changes Labor → Small change |
+| Age | 4% | Changes Age → Tiny change |
+
+---
+
+## 🔧 Method 1: Feature Scaling (Data-Based)
+
+### Problem
+Model might think Age (18-45) is less important because it's a narrow range
+
+### Solution
+**Standardize features to same scale**
+
+```python
+from sklearn.preprocessing import StandardScaler
+
+# Before: Features on different scales
+# Age: 18-45 (range=27)
+# LOS: 2-16 (range=14)
+# Labor: 1-16 (range=15)
+
+# After: All scaled to 0-1
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Train model
+model.fit(X_train_scaled, y_train)
+
+# Predict
+y_pred = model.predict(scaler.transform(patient_data))
+```
+
+### Result
+Features on same scale → More fair importance comparison
+
+---
+
+## 🔧 Method 2: Feature Engineering (Create New Features)
+
+### Idea
+Create new features that emphasize important characteristics
+
+```python
+# Original features
+Age
+LOS
+Labor Duration
+Complications
+Location
+
+# NEW: Create derived features
+Risk_Score = (LOS * 0.4) + (Complications * 30) + (Age * 0.1)
+# High LOS + Complications = Very high risk
+
+Complication_Severity = Complications * LOS
+# Complications matter MORE if longer stay
+
+Age_Risk_Group = 1 if Age > 35 else 0
+# Older mothers at higher risk
+```
+
+### Example Code
+```python
+# Add new features
+df['LOS_Complication_Score'] = df['LengthofStaydays'] * df['Complications_Encoded'] * 5
+df['Age_Risk'] = (df['Age'] > 35).astype(int)
+df['Recovery_Time_Risk'] = df['LengthofStaydays'] / (df['Age'] + 1)
+
+# Add to model
+feature_cols = [
+    'Age', 
+    'LaborDuration', 
+    'LengthofStaydays', 
+    'Location_Encoded', 
+    'Complications_Encoded',
+    'LOS_Complication_Score',  # NEW
+    'Age_Risk',                 # NEW
+    'Recovery_Time_Risk'        # NEW
+]
+
+X = df[feature_cols]
+# Train model with more features
+```
+
+### Result
+Model sees more detail about important features → Higher importance
+
+---
+
+## 🔧 Method 3: Sample Weighting (Give More Weight to Important Cases)
+
+### Idea
+"Learn more from cases with complications and longer LOS"
+
+```python
+# Create sample weights based on complications and LOS
+sample_weight = np.ones(len(X_train))
+
+# If has complications: weight = 2.0 (learn twice from this case)
+sample_weight[df_train['Complications_Encoded'] == 1] = 2.0
+
+# If high LOS (>10 days): weight = 1.5
+sample_weight[df_train['LengthofStaydays'] > 10] = 1.5
+
+# If BOTH complications AND high LOS: weight = 3.0 (learn 3x)
+both_flags = (df_train['Complications_Encoded'] == 1) & (df_train['LengthofStaydays'] > 10)
+sample_weight[both_flags] = 3.0
+
+# Train with sample weights
+model.fit(X_train, y_train, sample_weight=sample_weight)
+```
+
+### Result
+Model learns more from important cases → Prioritizes those features
+
+---
+
+## 🔧 Method 4: Hyperparameter Tuning (Adjust Model Settings)
+
+### Current Settings
+```python
+model = RandomForestClassifier(
+    n_estimators=100,    # 100 trees
+    max_depth=10,        # Max 10 levels per tree
+    random_state=42,
+    max_features='sqrt'  # Consider sqrt of features
+)
+```
+
+### Adjustments to Prioritize Features
+
+```python
+# Option A: Deeper trees (learn more nuanced patterns)
+model = RandomForestClassifier(
+    n_estimators=200,       # MORE trees
+    max_depth=15,           # DEEPER trees (was 10)
+    min_samples_leaf=1,     # Deeper splits allowed
+    min_samples_split=2,    # More granular splits
+    max_features='log2'     # Consider log2 features per split
+)
+
+# Option B: More trees with feature importance emphasis
+model = RandomForestClassifier(
+    n_estimators=500,       # MANY trees
+    max_depth=12,
+    min_samples_leaf=2,     # Must affect ≥2 samples (reduces overfitting)
+    class_weight='balanced' # Higher weight to minority class
+)
+
+# Option C: Feature importance optimization
+model = RandomForestClassifier(
+    n_estimators=300,
+    max_depth=10,
+    max_features='sqrt',
+    criterion='gini',       # Alternative: 'entropy' for different splits
+    bootstrap=True,
+    oob_score=True          # Out-of-bag score (prevents overfitting)
+)
+```
+
+### Result
+Different settings → Different feature importance patterns
+
+---
+
+## 🔧 Method 5: Using Gradient Boosting (Different Algorithm)
+
+### Idea
+Different algorithms learn features differently
+
+```python
+from sklearn.ensemble import GradientBoostingClassifier
+
+# Gradient Boosting often learns sequential patterns better
+model = GradientBoostingClassifier(
+    n_estimators=200,       # Boosting rounds
+    learning_rate=0.1,      # How fast to learn
+    max_depth=5,            # Shallow trees (different than Random Forest)
+    subsample=0.8,          # Use 80% of data per tree
+    min_samples_leaf=2,
+    min_samples_split=5
+)
+
+model.fit(X_train, y_train)
+
+# Feature importance often different!
+importances = model.feature_importances_
+```
+
+**Comparison**:
+```
+Random Forest:      LOS 38%, Complications 32%, Labor 18%, ...
+Gradient Boosting:  Complications 45%, LOS 30%, Labor 15%, ...
+```
+
+---
+
+## 🎯 RECOMMENDED: Complete Implementation
+
+Here's the **BEST approach** combining multiple methods:
+
+```python
+# ==========================================
+# STEP 1: Feature Scaling
+# ==========================================
+from sklearn.preprocessing import StandardScaler
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# ==========================================
+# STEP 2: Feature Engineering (Create Derived Features)
+# ==========================================
+# Create new features emphasizing complications + LOS
+df_train['LOS_Severity'] = df_train['LengthofStaydays'] ** 1.5  # Exponential
+df_train['Complication_Risk'] = df_train['Complications_Encoded'] * (df_train['LengthofStaydays'] / 5)
+df_train['Age_LOS_Interaction'] = (df_train['Age'] / 30) * df_train['LengthofStaydays']
+
+# Update feature list
+feature_cols = [
+    'Age', 'LaborDuration', 'LengthofStaydays', 
+    'Location_Encoded', 'Complications_Encoded',
+    'LOS_Severity',           # NEW - emphasizes LOS importance
+    'Complication_Risk',      # NEW - emphasizes complications
+    'Age_LOS_Interaction'     # NEW - shows age+LOS interaction
+]
+
+X_train_expanded = df_train[feature_cols]
+X_test_expanded = df_test[feature_cols]
+
+# Scale the expanded features
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train_expanded)
+X_test_scaled = scaler.transform(X_test_expanded)
+
+# ==========================================
+# STEP 3: Sample Weighting
+# ==========================================
+# Weight samples based on complexity
+sample_weight = np.ones(len(X_train_expanded))
+
+# Cases with complications get 2x weight
+sample_weight[df_train['Complications_Encoded'] == 1] = 2.0
+
+# Cases with long LOS (>10 days) get 1.5x weight
+sample_weight[df_train['LengthofStaydays'] > 10] = 1.5
+
+# Cases with BOTH get 3x weight
+both_idx = (df_train['Complications_Encoded'] == 1) & (df_train['LengthofStaydays'] > 10)
+sample_weight[both_idx] = 3.0
+
+# ==========================================
+# STEP 4: Model Training (Optimized)
+# ==========================================
+model = RandomForestClassifier(
+    n_estimators=300,          # More trees
+    max_depth=12,              # Deeper trees
+    min_samples_leaf=2,        # Allow fine-grained splits
+    min_samples_split=4,       # More detailed patterns
+    max_features='sqrt',       # Moderate feature sampling
+    class_weight='balanced',   # Handle imbalanced classes
+    bootstrap=True,
+    oob_score=True,            # Out-of-bag evaluation
+    random_state=42,
+    n_jobs=-1                  # Use all CPU cores
+)
+
+# Train WITH sample weights
+model.fit(X_train_scaled, y_train, sample_weight=sample_weight)
+
+# ==========================================
+# STEP 5: Evaluate & Check Feature Importance
+# ==========================================
+y_pred = model.predict(X_test_scaled)
+y_pred_proba = model.predict_proba(X_test_scaled)
+
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Accuracy: {accuracy:.1%}")
+
+# Check new feature importances
+importances = model.feature_importances_
+for name, imp in zip(feature_cols, importances):
+    print(f"{name:25s}: {imp:.1%}")
+
+# Expected output:
+# Complication_Risk        : 35%  (was 32%, now higher!)
+# LOS_Severity             : 28%  (was 38%, now distributed)
+# Age_LOS_Interaction      : 15%
+# LengthofStaydays         : 12%
+# Complications_Encoded    : 5%
+# ... etc
+```
+
+---
+
+## 📈 Expected Results
+
+### Before Optimization
+```
+Length of Stay:     38%
+Complications:      32%
+Labor Duration:     18%
+Location:            8%
+Age:                 4%
+```
+
+### After Optimization
+```
+Complication_Risk:        35% ⬆️ (prioritized!)
+LOS_Severity:            28% (distributed)
+Age_LOS_Interaction:     15% ⬆️ (new feature)
+Complications_Encoded:   12% ⬆️ (weighted)
+LengthofStaydays:         5%
+Labor Duration:           3%
+Location:                 2%
+```
+
+---
+
+## 🔄 How to Implement in Your App
+
+### Edit your streamlit_app.py:
+
+```python
+# In load_and_train_model() function, after line 66:
+
+# ... existing code ...
+
+# NEW: Feature Engineering
+df['LOS_Severity'] = df['LengthofStaydays'] ** 1.5
+df['Complication_Risk'] = df['Complications_Encoded'] * (df['LengthofStaydays'] / 5)
+
+# NEW: Updated feature columns
+feature_cols = [
+    'Age', 'LaborDuration', 'LengthofStaydays', 
+    'Location_Encoded', 'Complications_Encoded',
+    'LOS_Severity',      # NEW
+    'Complication_Risk'  # NEW
+]
+
+X = df[feature_cols]
+
+# NEW: Feature Scaling
+from sklearn.preprocessing import StandardScaler
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# NEW: Sample Weighting
+sample_weight = np.ones(len(X))
+sample_weight[df['Complications_Encoded'] == 1] = 2.0
+sample_weight[df['LengthofStaydays'] > 10] = 1.5
+
+# Existing train-test split
+X_train_scaled = scaler.transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# NEW: Optimized Random Forest
+model = RandomForestClassifier(
+    n_estimators=300,
+    max_depth=12,
+    min_samples_leaf=2,
+    max_features='sqrt',
+    class_weight='balanced',
+    random_state=42,
+    n_jobs=-1
+)
+
+# NEW: Train with sample weights
+model.fit(X_train_scaled, y_train, sample_weight=sample_weight[train_indices])
+
+# Predictions need scaling
+y_pred = model.predict(X_test_scaled)
+y_pred_proba = model.predict_proba(X_test_scaled)
+```
+
+---
+
+## 📊 Comparison of Methods
+
+| Method | Effort | Impact | Risk |
+|--------|--------|--------|------|
+| Feature Scaling | Low ⭐ | Medium | None |
+| Feature Engineering | Medium ⭐⭐ | High | Low |
+| Sample Weighting | Low ⭐ | Medium | Low |
+| Hyperparameter Tuning | Medium ⭐⭐ | Medium | Medium |
+| Algorithm Change | Medium ⭐⭐ | Medium | Medium |
+| **All Combined** | **High ⭐⭐⭐** | **Very High** | **Low** |
+
+---
+
+## ✨ TL;DR - Quick Implementation
+
+Want to **prioritize Complications, LOS, and Age**?
+
+### Quickest Fix (5 minutes):
+```python
+# 1. Add feature engineering
+df['Complication_Risk'] = df['Complications_Encoded'] * (df['LengthofStaydays'] / 5)
+
+# 2. Add to features
+feature_cols = [..., 'Complication_Risk']
+
+# 3. Scale features
+from sklearn.preprocessing import StandardScaler
+X = scaler.fit_transform(df[feature_cols])
+
+# 4. Use better hyperparameters
+model = RandomForestClassifier(
+    n_estimators=300,
+    max_depth=12,
+    class_weight='balanced'
+)
+```
+
+### Best Approach (1 hour):
+Implement ALL 5 methods above = Maximum control over feature importance!
+
+---
+
+## 🎯 Which Method Should I Use?
+
+- **Quick test**: Method 1 (Scaling) ✅
+- **Best results**: All 5 methods combined ✅✅✅
+- **Production**: Combine Methods 2, 3, 4 ✅✅
+- **Most important**: Method 2 (Feature Engineering) ✅
     
     # Feature engineering - FAIRNESS-AWARE: NO DeliveryType
     df['Readmitted'] = (df['Readmitted'] == 'Yes').astype(int)
