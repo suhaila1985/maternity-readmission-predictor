@@ -479,7 +479,7 @@ st.markdown("### 📊 Population Analysis (Demo)")
 demo_df = pd.DataFrame({
     'Age': [22, 35, 40, 28, 33, 41, 19, 38, 45, 25],
     'LaborDuration': [8, 20, 5, 15, 12, 3, 18, 22, 6, 10],
-    'LOS': [3, 7, 4, 5, 6, 8, 3, 9, 5, 4],
+    'LengthofStaydays': [3, 7, 4, 5, 6, 8, 3, 9, 5, 4],  # Changed from 'LOS'
     'DeliveryType': ['Vaginal','Cesarean','Vaginal','Cesarean','Vaginal','Cesarean','Vaginal','Cesarean','Vaginal','Vaginal'],
     'Location': ['Urban','Rural','Urban','Rural','Urban','Rural','Urban','Urban','Rural','Urban'],
     'Complications': ['No','Yes','No','Yes','No','Yes','No','Yes','No','No'],
@@ -488,7 +488,7 @@ demo_df = pd.DataFrame({
 # Pre-process demo_df for prediction
 demo_df['Location_Encoded'] = demo_df['Location'].apply(lambda x: 1 if x == 'Rural' else 0)
 demo_df['Complications_Encoded'] = demo_df['Complications'].apply(lambda x: 1 if x == 'Yes' else 0)
-demo_df['Complication_Risk'] = demo_df['Complications_Encoded'] * (demo_df['LengthofStaydays'] / 5)
+demo_df['Complication_Risk'] = demo_df['Complications_Encoded'] * (demo_df['LengthofStaydays'] / 5)  # FIXED!
 demo_df['LOS_Severity'] = demo_df['LengthofStaydays'] ** 1.5
 demo_df['Age_LOS_Interaction'] = (demo_df['Age'] / 30) * demo_df['LengthofStaydays']
 
@@ -505,9 +505,9 @@ def color_risk(val):
         return 'background-color: #FEE2E2; color: #DC2626; font-weight: bold'
     return 'background-color: #D1FAE5; color: #059669; font-weight: bold'
 
-styled = demo_df[['Age', 'LaborDuration', 'LengthofStaydays', 'Location', 'Complications', 'Risk_Prob', 'Risk_Level']].style.applymap(color_risk, subset=['Risk_Level'])
+# FIXED: Use map instead of applymap (pandas 2.1.0+)
+styled = demo_df[['Age', 'LaborDuration', 'LengthofStaydays', 'Location', 'Complications', 'Risk_Prob', 'Risk_Level']].style.map(color_risk, subset=['Risk_Level'])
 st.dataframe(styled, use_container_width=True)
-
 
 # ============================================
 # 8. EDUCATIONAL TABS
