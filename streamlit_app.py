@@ -1,4 +1,8 @@
-"""
+import streamlit as st
+if st.button("🔄 Clear Cache & Reload"):
+    st.cache_resource.clear()
+    st.rerun()
+    """
 Maternity Patient Readmission Risk Prediction Dashboard
 ========================================================
 Interactive Streamlit app for predicting 30-day hospital readmission risk
@@ -57,7 +61,16 @@ def load_and_train_model():
             'Complications': np.random.choice(['No', 'Yes'], 500, p=[0.7, 0.3]),
             'Readmitted': np.random.choice(['No', 'Yes'], 500, p=[0.75, 0.25]),
             'LengthofStaydays': np.random.uniform(2, 15, 500)
-        })
+        }
+        print("="*50)
+        print("DEBUG: Model Training Starting")
+        print(f"Feature count: {len(feature_cols)}")
+        print(f"Features: {feature_cols}")
+        print(f"X shape: {X.shape}")
+        print(f"Sample weights: {np.unique(sample_weight)}")
+        print(f"Model n_estimators: {model.n_estimators}")
+        print(f"Model max_depth: {model.max_depth}")
+        print("="*50))
     
     # Data cleaning
     df = df[(df['Age'] >= 18) & (df['Age'] <= 45) & (df['LengthofStaydays'] >= 2)].copy()
@@ -165,6 +178,23 @@ feature_cols = artifacts['feature_cols']
 accuracy = artifacts['accuracy']
 auc = artifacts['auc']
 
+# Add after model training:
+y_pred = model.predict(X_test)
+y_pred_proba = model.predict_proba(X_test)
+if y_pred_proba.shape[1] > 1:
+    y_pred_proba = y_pred_proba[:, 1]
+
+accuracy = accuracy_score(y_test, y_pred)
+auc = roc_auc_score(y_test, y_pred_proba)
+
+print(f"Accuracy: {accuracy:.3f}")
+print(f"AUC: {auc:.3f}")
+
+# After model training:
+importances = model.feature_importances_
+for name, imp in zip(feature_cols, importances):
+    print(f"{name:25s}: {imp:.3f}")
+    
 # ============================================
 # 2. DASHBOARD HEADER
 # ============================================
