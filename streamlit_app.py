@@ -1,7 +1,3 @@
-import streamlit as st
-if st.button("🔄 Clear Cache & Reload"):
-    st.cache_resource.clear()
-    st.rerun()
 """
 Maternity Patient Readmission Risk Prediction Dashboard
 ========================================================
