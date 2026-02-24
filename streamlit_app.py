@@ -345,7 +345,13 @@ with tab1:
     st.subheader("Feature Importance in Risk Prediction")
     
     importances = model.feature_importances_
-    feature_names = ['Age', 'Labor Duration', 'Length of Stay', 'Rural Location', 'Complications']
+    # Match feature_cols from model training
+    feature_names = [name.replace('_', ' ').title() for name in feature_cols]
+    
+    # Ensure same length (handle mismatch)
+    if len(feature_names) != len(importances):
+        st.warning(f"⚠️ Feature count mismatch: {len(feature_names)} names vs {len(importances)} importances")
+        feature_names = feature_names[:len(importances)]  # Trim to match
     
     importance_df = pd.DataFrame({
         'Feature': feature_names,
