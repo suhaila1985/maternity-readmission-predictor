@@ -485,13 +485,10 @@ with tab2:
     - **Average Accuracy**: {comparison_df['Accuracy'].mean():.1%}
     - **Average AUC**: {comparison_df['AUC'].mean():.3f}
     """)
-```
 
----
 
 ### **Tab 3: Ethics & Fairness (MULTIPLE MODELS)**
 
-```python
 with tab3:
     st.subheader("⚖️ Ethical Fairness Considerations - 5 Models")
     
@@ -578,9 +575,7 @@ with tab3:
     - **Transparent Comparison**: Shows bias metrics for all models
     - **Robust Conclusions**: If all 5 models are fair, high confidence in fairness
     """)
-```
 
----
 with tab4:
     st.subheader("Frequently Asked Questions")
     
