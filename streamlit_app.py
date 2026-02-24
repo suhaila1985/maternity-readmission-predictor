@@ -126,7 +126,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### ⚖️ Ethics Note")
-st.info("This tool is designed to **assist** clinical decision-making, not replace it. "
+    st.info("This tool is designed to **assist** clinical decision-making, not replace it. "
             "Always combine model output with clinical judgment.")
 
     st.markdown("---")
