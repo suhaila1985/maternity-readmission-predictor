@@ -1,9 +1,9 @@
+%%writefile streamlit_app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-# Imports for model training
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
@@ -12,7 +12,6 @@ from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings('ignore')
 
-# ── Page Config ──────────────────────────────────────────────
 st.set_page_config(
     page_title="Maternity Readmission Risk",
     page_icon="🏥",
@@ -20,7 +19,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ── CSS ──────────────────────────────────────────────────────
 st.markdown("""
 <style>
     .main-header {
@@ -73,18 +71,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ── Load / Train All Models and Metrics ──────────────────────
 @st.cache_resource
 def load_all_models_and_metrics():
-    """Trains 5 different models and returns all their artifacts (models, metrics, scaler, features)."""
-
-    # ==========================================
-    # 1. LOAD & PREPARE DATA
-    # ==========================================
     try:
         df = pd.read_csv('maternity_data.csv')
     except FileNotFoundError:
-        st.info("📊 Using demo data (maternity_data.csv not found for training all models). For full functionality, upload `maternity_data.csv`.")
+        st.info("📊 Using demo data (maternity_data.csv not found). For full functionality, upload `maternity_data.csv`.")
         np.random.seed(42)
         n_samples = 500
         df = pd.DataFrame({
@@ -98,23 +90,19 @@ def load_all_models_and_metrics():
             'LengthofStaydays': np.random.uniform(2, 15, n_samples)
         })
 
-    # Data cleaning
     df = df[(df['Age'] >= 18) & (df['Age'] <= 45) & (df['LengthofStaydays'] >= 2)].copy()
     df['LaborDuration'] = df['LaborDuration'].fillna(df['LaborDuration'].median())
     df['Age'] = df['Age'].fillna(df['Age'].median())
     df['Complications'] = df['Complications'].fillna(df['Complications'].mode()[0])
 
-    # Feature engineering
     df['Readmitted'] = (df['Readmitted'] == 'Yes').astype(int)
     df['Location_Encoded'] = (df['Location'] == 'Rural').astype(int)
     df['Complications_Encoded'] = (df['Complications'] == 'Yes').astype(int)
 
-    # Engineered features (consistent with the notebook)
     df['Complication_Risk'] = df['Complications_Encoded'] * (df['LengthofStaydays'] / 5)
     df['LOS_Severity'] = df['LengthofStaydays'] ** 1.5
     df['Age_LOS_Interaction'] = (df['Age'] / 30) * df['LengthofStaydays']
 
-    # Feature columns (consistent with the notebook)
     feature_cols = [
         'Age', 'LaborDuration', 'LengthofStaydays',
         'Location_Encoded', 'Complications_Encoded',
@@ -124,51 +112,39 @@ def load_all_models_and_metrics():
     X = df[feature_cols]
     y = df['Readmitted']
 
-    # Scale features
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     X = pd.DataFrame(X_scaled, columns=feature_cols)
 
-    # Train-test split
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # Sample weights
     sample_weight = np.ones(len(X_train))
     df_train = df.iloc[X_train.index]
-    sample_weight[df_train['Complications_Encoded'] == 1] = 2.0
-    sample_weight[df_train['LengthofStaydays'] > 10] = 1.5
-    both_mask = (df_train['Complications_Encoded'] == 1) & (df_train['LengthofStaydays'] > 10)
+    sample_weight[df_train['Complications_Encoded'].values == 1] = 2.0
+    sample_weight[df_train['LengthofStaydays'].values > 10] = 1.5
+    both_mask = (df_train['Complications_Encoded'].values == 1) & (df_train['LengthofStaydays'].values > 10)
     sample_weight[both_mask] = 3.0
 
-    # ==========================================
-    # 2. TRAIN 5 DIFFERENT MODELS
-    # ==========================================
-
-    # Model 1: Random Forest (100 trees, depth 10)
     model_1 = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1)
     model_1.fit(X_train, y_train, sample_weight=sample_weight)
 
-    # Model 2: Random Forest (300 trees, depth 12) - OPTIMIZED (Chosen as primary model)
     model_2 = RandomForestClassifier(
         n_estimators=300, max_depth=12, min_samples_leaf=2, min_samples_split=4,
         max_features='sqrt', class_weight='balanced', random_state=42, n_jobs=-1
     )
     model_2.fit(X_train, y_train, sample_weight=sample_weight)
 
-    # Model 3: Gradient Boosting
     model_3 = GradientBoostingClassifier(
         n_estimators=200, learning_rate=0.1, max_depth=5, subsample=0.8,
         min_samples_leaf=2, random_state=42
     )
     model_3.fit(X_train, y_train)
 
-    # Model 4: Logistic Regression
     model_4 = LogisticRegression(max_iter=1000, random_state=42, class_weight='balanced')
     model_4.fit(X_train, y_train, sample_weight=sample_weight)
 
-    # Model 5: XGBoost (if available)
     try:
         import xgboost as xgb
         model_5 = xgb.XGBClassifier(
@@ -177,30 +153,15 @@ def load_all_models_and_metrics():
         )
         model_5.fit(X_train, y_train, sample_weight=sample_weight)
     except ImportError:
-        st.warning("XGBoost not available, falling back to another Random Forest variant for Model 5.")
         model_5 = RandomForestClassifier(n_estimators=200, max_depth=8, min_samples_leaf=3, random_state=42, n_jobs=-1)
         model_5.fit(X_train, y_train, sample_weight=sample_weight)
 
-    # ==========================================
-    # 3. EVALUATE ALL 5 MODELS
-    # ==========================================
-
     def evaluate_model_performance(model, X_test, y_test):
-        """Evaluate model and return accuracy and AUC"""
         y_pred = model.predict(X_test)
         y_pred_proba_full = model.predict_proba(X_test)
+        y_pred_proba = y_pred_proba_full[:, 1] if y_pred_proba_full.shape[1] > 1 else y_pred_proba_full[:, 0]
+        return accuracy_score(y_test, y_pred), roc_auc_score(y_test, y_pred_proba)
 
-        if y_pred_proba_full.shape[1] == 1:
-            y_pred_proba = y_pred_proba_full[:, 0]
-        else:
-            y_pred_proba = y_pred_proba_full[:, 1]
-
-        accuracy = accuracy_score(y_test, y_pred)
-        auc = roc_auc_score(y_test, y_pred_proba)
-
-        return accuracy, auc
-
-    # Evaluate all models
     accuracy_1, auc_1 = evaluate_model_performance(model_1, X_test, y_test)
     accuracy_2, auc_2 = evaluate_model_performance(model_2, X_test, y_test)
     accuracy_3, auc_3 = evaluate_model_performance(model_3, X_test, y_test)
@@ -208,39 +169,28 @@ def load_all_models_and_metrics():
     accuracy_5, auc_5 = evaluate_model_performance(model_5, X_test, y_test)
 
     return {
-        # Models
         'model_1': model_1, 'model_2': model_2, 'model_3': model_3,
         'model_4': model_4, 'model_5': model_5,
-
-        # Accuracies
         'accuracy_1': accuracy_1, 'accuracy_2': accuracy_2, 'accuracy_3': accuracy_3,
         'accuracy_4': accuracy_4, 'accuracy_5': accuracy_5,
-
-        # AUCs
         'auc_1': auc_1, 'auc_2': auc_2, 'auc_3': auc_3,
         'auc_4': auc_4, 'auc_5': auc_5,
-
-        # Other info
         'feature_cols': feature_cols,
         'scaler': scaler,
-        'X_test': X_test, # Kept for potential future use or fairness audits
-        'y_test': y_test  # Kept for potential future use or fairness audits
+        'X_test': X_test,
+        'y_test': y_test
     }
 
-# Load/train all models and get their artifacts
+
 all_artifacts = load_all_models_and_metrics()
 
-# Extract the primary model (Optimized Random Forest) and its components for prediction
 model = all_artifacts['model_2']
 scaler = all_artifacts['scaler']
 feature_cols = all_artifacts['feature_cols']
 prediction_accuracy = all_artifacts['accuracy_2']
 prediction_auc = all_artifacts['auc_2']
+threshold = 0.35
 
-# Define a common risk threshold for the primary model
-threshold = 0.35 # This threshold was used in previous notebook steps
-
-# Prepare model performance DataFrame for Tab 2
 model_names = [
     'Random Forest (100)',
     'Random Forest (300) - Optimized',
@@ -254,8 +204,6 @@ metrics_data = {
     'AUC': [all_artifacts[f'auc_{i+1}'] for i in range(5)]
 }
 model_performance_df = pd.DataFrame(metrics_data)
-print("=== Model Performance Comparison (after SMOTE retraining) ===")
-print(model_performance_df.round(3))
 
 
 # ── Sidebar ──────────────────────────────────────────────────
@@ -310,7 +258,6 @@ with col1:
     st.markdown("**Demographics**")
     age = st.slider("Patient Age", min_value=18, max_value=45, value=28, step=1)
     location = st.selectbox("Location", ["Urban", "Rural"])
-    # Delivery Type is intentionally excluded from direct input for fairness as per ethics audit.
 
 with col2:
     st.markdown("**Medical Details**")
@@ -328,28 +275,19 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ── Predict Button ───────────────────────────────────────────
 if st.button("🔍 Calculate Readmission Risk"):
 
-    # Encode categorical variables for the model
     location_encoded = 1 if location == 'Rural' else 0
     complications_encoded = 1 if complications == 'Yes' else 0
 
-    # Apply engineered features used during training
     complication_risk = complications_encoded * (los / 5)
     los_severity = los ** 1.5
     age_los_interaction = (age / 30) * los
 
-    # Create input DataFrame (order matters!)
     input_data_raw = pd.DataFrame([[
-        age,
-        labor_duration,
-        los,
-        location_encoded,
-        complications_encoded,
-        complication_risk,
-        los_severity,
-        age_los_interaction
+        age, labor_duration, los,
+        location_encoded, complications_encoded,
+        complication_risk, los_severity, age_los_interaction
     ]], columns=feature_cols)
 
-    # Scale the input data using the trained scaler
     input_data_scaled = scaler.transform(input_data_raw)
 
     prob     = float(model.predict_proba(input_data_scaled)[0, 1])
@@ -386,15 +324,12 @@ if st.button("🔍 Calculate Readmission Risk"):
             """, unsafe_allow_html=True)
 
     with gauge_col:
-        # Gauge chart (simplified from original for brevity, adjust as needed)
         fig, ax = plt.subplots(figsize=(4.5, 3), subplot_kw={'aspect': 'equal'})
         theta_start, theta_end = np.pi, 0
 
-        # Background arc
         theta = np.linspace(theta_start, theta_end, 200)
         ax.plot(np.cos(theta), np.sin(theta), linewidth=18, color='#E5E7EB', solid_capstyle='round')
 
-        # Color zones
         for zone_start, zone_end, color in [
             (np.pi, np.pi*2/3, '#10B981'),
             (np.pi*2/3, np.pi/3, '#FBBF24'),
@@ -403,13 +338,11 @@ if st.button("🔍 Calculate Readmission Risk"):
             ztheta = np.linspace(zone_start, zone_end, 100)
             ax.plot(np.cos(ztheta), np.sin(ztheta), linewidth=18, color=color, alpha=0.3)
 
-        # Value arc
         filled_end = np.pi - prob * np.pi
         vtheta = np.linspace(theta_start, filled_end, 200)
         arc_color = '#EF4444' if is_high else '#10B981'
         ax.plot(np.cos(vtheta), np.sin(vtheta), linewidth=18, color=arc_color, solid_capstyle='round')
 
-        # Needle
         angle = np.pi - prob * np.pi
         ax.arrow(0, 0, 0.65*np.cos(angle), 0.65*np.sin(angle),
                  head_width=0.05, head_length=0.05, fc='#1F2937', ec='#1F2937', linewidth=2)
@@ -425,15 +358,14 @@ if st.button("🔍 Calculate Readmission Risk"):
         ax.set_xlim(-1.1, 1.1); ax.set_ylim(-0.6, 1.1)
         ax.axis('off')
         fig.patch.set_alpha(0)
-        st.pyplot(fig, width='stretch')
+        st.pyplot(fig)
         plt.close()
-
 
     with factors_col:
         st.markdown("**Risk Factor Summary**")
 
         factor_items = [
-            ("Age", age, 30, "younger" , "older"),
+            ("Age", age, 30, "younger", "older"),
             ("LOS", los, 5, "shorter", "longer"),
             ("Labor Dur.", labor_duration, 12, "shorter", "longer"),
         ]
@@ -448,7 +380,6 @@ if st.button("🔍 Calculate Readmission Risk"):
         st.markdown(f"{flag_style(location=='Rural')} **{location}** location")
         st.markdown(f"{flag_style(complications=='Yes')} Complications: **{complications}**")
 
-    # Clinical recommendations
     st.markdown("---")
     st.markdown("### 💊 Clinical Recommendations")
     if is_high:
@@ -472,48 +403,50 @@ if st.button("🔍 Calculate Readmission Risk"):
                f"All decisions should be made by qualified medical professionals.")
 
 
-# ── Batch Analysis Tab ───────────────────────────────────────
+# ── Batch / Population Analysis ───────────────────────────────
 st.markdown("---")
 st.markdown("### 📊 Population Analysis (Demo)")
 
 demo_df = pd.DataFrame({
-    'Age': [22, 35, 40, 28, 33, 41, 19, 38, 45, 25],
-    'LaborDuration': [8, 20, 5, 15, 12, 3, 18, 22, 6, 10],
-    'LOS': [3, 7, 4, 5, 6, 8, 3, 9, 5, 4],
-    'DeliveryType': ['Vaginal','Cesarean','Vaginal','Cesarean','Vaginal','Cesarean','Vaginal','Cesarean','Vaginal','Vaginal'],
-    'Location': ['Urban','Rural','Urban','Rural','Urban','Cesarean','Urban','Urban','Rural','Urban'],
+    'Age':           [22, 35, 40, 28, 33, 41, 19, 38, 45, 25],
+    'LaborDuration': [8,  20,  5, 15, 12,  3, 18, 22,  6, 10],
+    # FIX 1: renamed LOS → LengthofStaydays to match feature_cols
+    'LengthofStaydays': [3, 7, 4, 5, 6, 8, 3, 9, 5, 4],
+    'DeliveryType':  ['Vaginal','Cesarean','Vaginal','Cesarean','Vaginal',
+                      'Cesarean','Vaginal','Cesarean','Vaginal','Vaginal'],
+    # FIX 2: corrected typo 'Cesarean' → 'Urban' in Location column
+    'Location':      ['Urban','Rural','Urban','Rural','Urban','Urban',
+                      'Urban','Urban','Rural','Urban'],
     'Complications': ['No','Yes','No','Yes','No','Yes','No','Yes','No','No'],
 })
 
-# Pre-process demo_df for prediction
-demo_df['Location_Encoded'] = demo_df['Location'].apply(lambda x: 1 if x == 'Rural' else 0)
+demo_df['Location_Encoded']    = demo_df['Location'].apply(lambda x: 1 if x == 'Rural' else 0)
 demo_df['Complications_Encoded'] = demo_df['Complications'].apply(lambda x: 1 if x == 'Yes' else 0)
-demo_df['Complication_Risk'] = demo_df['Complications_Encoded'] * (demo_df['LOS'] / 5)
-demo_df['LOS_Severity'] = demo_df['LOS'] ** 1.5
-demo_df['Age_LOS_Interaction'] = (demo_df['Age'] / 30) * demo_df['LOS']
+demo_df['Complication_Risk']   = demo_df['Complications_Encoded'] * (demo_df['LengthofStaydays'] / 5)
+demo_df['LOS_Severity']        = demo_df['LengthofStaydays'] ** 1.5
+demo_df['Age_LOS_Interaction'] = (demo_df['Age'] / 30) * demo_df['LengthofStaydays']
 
-# Predict for demo data
-X_demo = demo_df[feature_cols]
+X_demo        = demo_df[feature_cols]          # now works: all cols present
 X_demo_scaled = scaler.transform(X_demo)
-demo_df['Risk_Prob'] = model.predict_proba(X_demo_scaled)[:,1]
+demo_df['Risk_Prob']  = model.predict_proba(X_demo_scaled)[:, 1]
 demo_df['Risk_Level'] = demo_df['Risk_Prob'].apply(lambda p: 'HIGH' if p >= threshold else 'LOW')
-
-demo_df['Risk_Prob'] = (demo_df['Risk_Prob']*100).round(1).astype(str) + '%'
+demo_df['Risk_Prob']  = (demo_df['Risk_Prob'] * 100).round(1).astype(str) + '%'
 
 def color_risk(val):
     if val == 'HIGH':
         return 'background-color: #FEE2E2; color: #DC2626; font-weight: bold'
     return 'background-color: #D1FAE5; color: #059669; font-weight: bold'
 
-styled = demo_df[['Age', 'LaborDuration', 'LOS', 'Location', 'Complications', 'Risk_Prob', 'Risk_Level']].style.applymap(color_risk, subset=['Risk_Level'])
-st.dataframe(styled, width='stretch')
+# FIX 3: display LengthofStaydays column (renamed from LOS) and use use_container_width instead of width='stretch'
+styled = demo_df[['Age', 'LaborDuration', 'LengthofStaydays', 'Location',
+                   'Complications', 'Risk_Prob', 'Risk_Level']].style.map(color_risk, subset=['Risk_Level'])
+st.dataframe(styled, use_container_width=True)
 
 
-# ============================================
-# 8. EDUCATIONAL TABS
-# ============================================
+# ── Educational Tabs ──────────────────────────────────────────
+# FIX 4: corrected broken emoji in tab1 label
 tab1, tab2, tab3, tab4 = st.tabs([
-    "?️ Feature Impact",
+    "📈 Feature Impact",
     "📊 Model Performance",
     "⚖️ Ethics & Fairness",
     "❓ FAQ"
@@ -522,15 +455,13 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.subheader("Feature Importance in Risk Prediction")
 
-    # Feature importances from the chosen primary model
     if hasattr(model, 'feature_importances_'):
         importances = model.feature_importances_
-    elif hasattr(model, 'coef_'): # For linear models like Logistic Regression
+    elif hasattr(model, 'coef_'):
         importances = np.abs(model.coef_[0])
     else:
-        importances = np.zeros(len(feature_cols)) # Fallback
+        importances = np.zeros(len(feature_cols))
 
-    # Map feature_cols to more readable names
     readable_feature_names = {
         'Age': 'Age', 'LaborDuration': 'Labor Duration', 'LengthofStaydays': 'Length of Stay',
         'Location_Encoded': 'Location (Rural)', 'Complications_Encoded': 'Complications (Yes)',
@@ -550,30 +481,29 @@ with tab1:
     ax.set_title(f'Feature Importance in Readmission Prediction ({type(model).__name__})')
     ax.grid(axis='x', alpha=0.3)
     st.pyplot(fig)
-    plt.close(fig) # Close the figure to prevent display issues
+    plt.close(fig)
 
     st.markdown("""
     **Key Insights from the Primary Model:**
-    - **Age-LOS Interaction**: This engineered feature combines patient age and length of stay, indicating a strong influence on readmission risk.
-    - **Length of Stay & LOS Severity**: Longer hospital stays and their severity (non-linear transformation) are crucial indicators.
+    - **Age-LOS Interaction**: Combines patient age and length of stay — strong influence on readmission risk.
+    - **Length of Stay & LOS Severity**: Longer stays and their non-linear severity are crucial indicators.
     - **Labor Duration**: Reflects the intensity and complexity of the delivery process.
-    - **Complication Risk**: Combines the presence of complications with length of stay, a direct clinical risk factor.
-    - **Age**: Patient age remains a fundamental demographic risk factor.
-    - **Location & Complications**: These direct indicators also contribute to risk assessment.
+    - **Complication Risk**: Combines complications with length of stay — a direct clinical risk factor.
+    - **Age**: A fundamental demographic risk factor.
+    - **Location & Complications**: Direct indicators contributing to risk assessment.
     """)
 
 with tab2:
     st.subheader("Model Performance Metrics Overview")
-
-    st.markdown("Here is a comparative view of the accuracy and AUC scores for different models trained on the maternity dataset.")
-    st.dataframe(model_performance_df.round(3), width='stretch')
+    st.markdown("Comparative accuracy and AUC scores for all trained models.")
+    st.dataframe(model_performance_df.round(3), use_container_width=True)
 
     st.markdown(f"""
     **Training Dataset Details:**
     - ~463 patients (after quality checks)
     - ~25.3% readmission rate
     - Train-test split: 80-20
-    - **Primary Model**: Optimized Random Forest (300 trees) was selected for predictions due to its balanced performance.
+    - **Primary Model**: Optimized Random Forest (300 trees) selected for its balanced performance.
     """)
 
 with tab3:
@@ -587,29 +517,29 @@ with tab3:
     ### Design Choices
 
     ✅ **Included Features:**
-    - Age, Labor Duration, Length of Stay, Complications, Location, and engineered combinations thereof.
-    - All features are chosen for their **clinical relevance and causal relationship** with readmission risk.
+    - Age, Labor Duration, Length of Stay, Complications, Location, and engineered combinations.
+    - All chosen for their **clinical relevance and causal relationship** with readmission risk.
 
     ❌ **Excluded Features:**
-    - **Delivery Type (Vaginal vs. Cesarean)**: While predictive, directly including this feature could lead to perpetuating historical biases or discriminatory treatment based on delivery method rather than clinical need. The underlying clinical reasons for certain delivery types (e.g., complications) are captured.
+    - **Delivery Type (Vaginal vs. Cesarean)**: Could perpetuate historical biases; underlying clinical
+      reasons (e.g., complications) are already captured by other features.
 
     ### Bias Monitoring
-    - Model performance (accuracy, recall, precision) is regularly audited across sensitive subgroups (e.g., location, age groups).
-    - The use of `class_weight='balanced'` in the primary Random Forest model helps mitigate bias towards the majority class.
-    - Fairness audits conducted quarterly.
-    - Results available in ethics audit report.
+    - Performance audited across subgroups (location, age groups) quarterly.
+    - `class_weight='balanced'` mitigates majority-class bias in the primary model.
+    - Results available in the ethics audit report.
 
-    ### Limitations & Considerations
-    - Model trained on hospital data; may not generalize to all settings.
-    - Clinical validation by medical professionals is required before deployment.
-    - Always requires human oversight and clinical judgment for all patient care decisions.
-    - Patients should have the right to know their risk prediction and its rationale.
+    ### Limitations
+    - Model trained on hospital data; may not generalise to all settings.
+    - Clinical validation required before deployment.
+    - Always requires human oversight and clinical judgment.
+    - Patients have the right to know their risk prediction and its rationale.
 
     ### ICMR Compliance (Illustrative)
-    - ✓ Data privacy (de-identified data used for training)
-    - ✓ Informed consent (assumed for data usage within a healthcare system)
+    - ✓ Data privacy (de-identified training data)
+    - ✓ Informed consent (assumed within healthcare system)
     - ✓ Fairness audits (as described above)
-    - ⚠️ IRB approval and institutional validation are crucial before clinical deployment.
+    - ⚠️ IRB approval and institutional validation crucial before clinical deployment.
     """)
 
 with tab4:
@@ -618,56 +548,46 @@ with tab4:
     with st.expander("1. What is the model predicting?"):
         st.write("""
         The model predicts the probability that a maternity patient will be readmitted
-        to the hospital within 30 days of discharge. This helps identify patients who
-        might need more intensive follow-up care to prevent readmission.
+        within 30 days of discharge, helping identify patients who need more intensive follow-up.
         """)
 
     with st.expander("2. Why doesn't the model include delivery type?"):
         st.write("""
-        While delivery type (vaginal vs. cesarean) is statistically associated with
-        readmission, directly including it might introduce or perpetuate fairness biases.
-        Instead, the model focuses on the underlying clinical factors like 'Complications'
-        and 'Length of Stay' which are the more direct drivers of readmission,
-        regardless of the delivery method. This ensures a more equitable risk assessment.
+        Delivery type is statistically associated with readmission but may introduce fairness biases.
+        The model instead focuses on the underlying clinical factors (Complications, Length of Stay)
+        which are the more direct drivers of readmission, ensuring a more equitable assessment.
         """)
 
     with st.expander("3. How accurate is the primary prediction model?"):
         st.write(f"""
         The primary model (Optimized Random Forest) achieves an accuracy of **{prediction_accuracy:.1%}**
-        and an AUC score of **{prediction_auc:.3f}** on the test data. However, this performance
-        should always be validated within your specific hospital setting before
-        clinical deployment.
+        and an AUC score of **{prediction_auc:.3f}** on test data. Always validate within your
+        specific hospital setting before clinical deployment.
         """)
 
     with st.expander("4. Can I override the model's prediction?"):
         st.write("""
-        Absolutely! This model is a **decision support tool only**. Clinical judgment
-        always takes precedence. Use the model to flag at-risk patients, but final
-        follow-up decisions must always be made by qualified medical professionals.
+        Absolutely. This is a **decision support tool only**. Clinical judgment always takes
+        precedence. Final follow-up decisions must be made by qualified medical professionals.
         """)
 
     with st.expander("5. What should I do with a high-risk prediction?"):
         st.write("""
-        High-risk predictions suggest the need for enhanced care, such as:
-        - Early follow-up contact (e.g., within 24-48 hours post-discharge).
-        - A detailed assessment of potential warning signs and patient needs.
-        - Clear, actionable discharge instructions, including when and how to seek urgent care.
-        - Provision of access to on-call support or dedicated helplines.
-        - Coordinated care planning, potentially involving home health services or specialists.
+        High-risk predictions suggest enhanced care such as:
+        - Early follow-up within 24–48 hours post-discharge.
+        - Detailed assessment of warning signs and patient needs.
+        - Clear, actionable discharge instructions.
+        - Access to on-call support or dedicated helplines.
+        - Coordinated care planning with home health or specialist services.
         """)
 
     with st.expander("6. How often is the model updated?"):
         st.write("""
-        Best practice dictates that predictive models in healthcare should be
-        retrained and validated regularly (e.g., annually) with fresh patient data.
-        This ensures the model remains relevant and accurate as patient populations,
-        clinical practices, and medical conditions evolve. Regular fairness audits
-        should also be part of this update cycle.
+        Best practice: retrain and validate annually with fresh patient data to remain accurate
+        as populations and clinical practices evolve. Regular fairness audits should be included.
         """)
 
-# ============================================
-# 9. FOOTER
-# ============================================
+# ── Footer ────────────────────────────────────────────────────
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9em;'>
