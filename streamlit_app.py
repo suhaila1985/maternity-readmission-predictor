@@ -286,7 +286,7 @@ with st.sidebar:
     st.markdown("### 📊 Fairness Audit")
     st.markdown("""
     **Delivery type gap:** ≤ 9.9% ✅ (Explicitly excluded to prevent discrimination)
-    **Location gap:** Needs monitoring for potential bias ⚠️
+    **Location gap:** Needs monitoring for potential bias ⚠
     *Last audit: February 2026*
     """)
 
@@ -425,7 +425,7 @@ if st.button("🔍 Calculate Readmission Risk"):
         ax.set_xlim(-1.1, 1.1); ax.set_ylim(-0.6, 1.1)
         ax.axis('off')
         fig.patch.set_alpha(0)
-        st.pyplot(fig, use_container_width=True)
+        st.pyplot(fig, width='stretch')
         plt.close()
 
 
@@ -454,7 +454,7 @@ if st.button("🔍 Calculate Readmission Risk"):
     if is_high:
         rcols = st.columns(3)
         with rcols[0]:
-            st.error("**📞 Schedule Follow-up**\nBook appointment within 7 days of discharge")
+            st.error("**☎️ Schedule Follow-up**\nBook appointment within 7 days of discharge")
         with rcols[1]:
             st.warning("**📋 Enhanced Discharge Plan**\nProvide written instructions for warning signs")
         with rcols[2]:
@@ -464,7 +464,7 @@ if st.button("🔍 Calculate Readmission Risk"):
         with rcols[0]:
             st.success("**📅 Standard Follow-up**\nRoutine 6-week postnatal appointment")
         with rcols[1]:
-            st.success("**📞 Helpline**\nProvide helpline number for questions")
+            st.success("**☎️ Helpline**\nProvide helpline number for questions")
         with rcols[2]:
             st.success("**📱 Patient App**\nEnroll in standard maternity tracking app")
 
@@ -481,16 +481,16 @@ demo_df = pd.DataFrame({
     'LaborDuration': [8, 20, 5, 15, 12, 3, 18, 22, 6, 10],
     'LOS': [3, 7, 4, 5, 6, 8, 3, 9, 5, 4],
     'DeliveryType': ['Vaginal','Cesarean','Vaginal','Cesarean','Vaginal','Cesarean','Vaginal','Cesarean','Vaginal','Vaginal'],
-    'Location': ['Urban','Rural','Urban','Rural','Urban','Rural','Urban','Urban','Rural','Urban'],
+    'Location': ['Urban','Rural','Urban','Rural','Urban','Cesarean','Urban','Urban','Rural','Urban'],
     'Complications': ['No','Yes','No','Yes','No','Yes','No','Yes','No','No'],
 })
 
 # Pre-process demo_df for prediction
 demo_df['Location_Encoded'] = demo_df['Location'].apply(lambda x: 1 if x == 'Rural' else 0)
 demo_df['Complications_Encoded'] = demo_df['Complications'].apply(lambda x: 1 if x == 'Yes' else 0)
-demo_df['Complication_Risk'] = demo_df['Complications_Encoded'] * (demo_df['LengthofStaydays'] / 5)
-demo_df['LOS_Severity'] = demo_df['LengthofStaydays'] ** 1.5
-demo_df['Age_LOS_Interaction'] = (demo_df['Age'] / 30) * demo_df['LengthofStaydays']
+demo_df['Complication_Risk'] = demo_df['Complications_Encoded'] * (demo_df['LOS'] / 5)
+demo_df['LOS_Severity'] = demo_df['LOS'] ** 1.5
+demo_df['Age_LOS_Interaction'] = (demo_df['Age'] / 30) * demo_df['LOS']
 
 # Predict for demo data
 X_demo = demo_df[feature_cols]
@@ -505,15 +505,15 @@ def color_risk(val):
         return 'background-color: #FEE2E2; color: #DC2626; font-weight: bold'
     return 'background-color: #D1FAE5; color: #059669; font-weight: bold'
 
-styled = demo_df[['Age', 'LaborDuration', 'LengthofStaydays', 'Location', 'Complications', 'Risk_Prob', 'Risk_Level']].style.applymap(color_risk, subset=['Risk_Level'])
-st.dataframe(styled, use_container_width=True)
+styled = demo_df[['Age', 'LaborDuration', 'LOS', 'Location', 'Complications', 'Risk_Prob', 'Risk_Level']].style.applymap(color_risk, subset=['Risk_Level'])
+st.dataframe(styled, width='stretch')
 
 
 # ============================================
 # 8. EDUCATIONAL TABS
 # ============================================
 tab1, tab2, tab3, tab4 = st.tabs([
-    "🔍 Feature Impact",
+    "?️ Feature Impact",
     "📊 Model Performance",
     "⚖️ Ethics & Fairness",
     "❓ FAQ"
@@ -566,7 +566,7 @@ with tab2:
     st.subheader("Model Performance Metrics Overview")
 
     st.markdown("Here is a comparative view of the accuracy and AUC scores for different models trained on the maternity dataset.")
-    st.dataframe(model_performance_df.round(3), use_container_width=True)
+    st.dataframe(model_performance_df.round(3), width='stretch')
 
     st.markdown(f"""
     **Training Dataset Details:**
