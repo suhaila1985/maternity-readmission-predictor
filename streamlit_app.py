@@ -61,7 +61,7 @@ def load_and_train():
     )
 
     model = RandomForestClassifier(
-        n_estimators=200, max_depth=10,
+        n_estimators=200, max_depth=8,min_samples_leaf=5,
         random_state=42, class_weight='balanced'
     )
     model.fit(X_train, y_train)
